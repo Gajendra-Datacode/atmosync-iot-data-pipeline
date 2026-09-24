@@ -1,71 +1,159 @@
-import os
 import json
+import os
+from datetime import datetime
+
 from dotenv import load_dotenv
-import snowflake.connector
 from kafka import KafkaConsumer
+import snowflake.connector
+
+
+# ============================================================
+# Load environment variables
+# ============================================================
 
 load_dotenv()
 
-KAFKA_TOPIC = "atmosync-telemetry"
-KAFKA_SERVER = "localhost:9092"
 
-# Connect to Kafka
+# ============================================================
+# Configuration
+# ============================================================
+
+KAFKA_SERVER = "localhost:9092"
+KAFKA_TOPIC = "iot-telemetry"
+
+SNOWFLAKE_DATABASE = "ATMOSYNC"
+SNOWFLAKE_SCHEMA = "RAW"
+SNOWFLAKE_TABLE = "IOT_TELEMETRY"
+
+
+# ============================================================
+# Kafka Consumer
+# ============================================================
+
 consumer = KafkaConsumer(
     KAFKA_TOPIC,
     bootstrap_servers=KAFKA_SERVER,
+
+    value_deserializer=lambda value: json.loads(
+        value.decode("utf-8")
+    ),
+
     auto_offset_reset="latest",
-    enable_auto_commit=True,
-    value_deserializer=lambda x: json.loads(x.decode("utf-8"))
+    enable_auto_commit=False,
+
+    group_id="atmosync-snowflake-consumer"
 )
 
-# Connect to Snowflake
+
+# ============================================================
+# Snowflake Connection
+# ============================================================
+
 conn = snowflake.connector.connect(
     account=os.getenv("SNOWFLAKE_ACCOUNT"),
     user=os.getenv("SNOWFLAKE_USER"),
     password=os.getenv("SNOWFLAKE_PASSWORD"),
     warehouse=os.getenv("SNOWFLAKE_WAREHOUSE"),
-    database=os.getenv("SNOWFLAKE_DATABASE"),
-    schema=os.getenv("SNOWFLAKE_SCHEMA")
+    database=SNOWFLAKE_DATABASE,
+    schema=SNOWFLAKE_SCHEMA
 )
 
 cursor = conn.cursor()
 
-print("Kafka → Snowflake consumer started...")
-print("Waiting for IoT telemetry...")
+
+print("=" * 75)
+print("          ATMOSYNC KAFKA → SNOWFLAKE")
+print("=" * 75)
+
+print(f"Kafka Topic : {KAFKA_TOPIC}")
+print(
+    f"Snowflake   : "
+    f"{SNOWFLAKE_DATABASE}.{SNOWFLAKE_SCHEMA}.{SNOWFLAKE_TABLE}"
+)
+
+print()
+print("Waiting for telemetry...")
+print("Press CTRL + C to stop.")
+print("=" * 75)
+
+
+# ============================================================
+# Snowflake INSERT
+# ============================================================
+
+insert_query = f"""
+INSERT INTO {SNOWFLAKE_DATABASE}.{SNOWFLAKE_SCHEMA}.{SNOWFLAKE_TABLE}
+(
+    CONTAINER_ID,
+    TEMPERATURE,
+    HUMIDITY,
+    VIBRATION,
+    EVENT_TIMESTAMP
+)
+VALUES (%s, %s, %s, %s, %s)
+"""
+
+
+# ============================================================
+# Process Kafka Messages
+# ============================================================
 
 try:
-    for message in consumer:
-        data = message.value
 
+    for message in consumer:
+
+        telemetry = message.value
+
+        container_id = telemetry["container_id"]
+        temperature = telemetry["temperature"]
+        humidity = telemetry["humidity"]
+        vibration = telemetry["vibration"]
+
+        event_timestamp = datetime.fromisoformat(
+            telemetry["timestamp"].replace("Z", "+00:00")
+        )
+
+        # Insert into Snowflake
         cursor.execute(
-            """
-            INSERT INTO IOT_TELEMETRY
-            (CONTAINER_ID, TEMPERATURE, HUMIDITY, VIBRATION, TIMESTAMP)
-            VALUES (%s, %s, %s, %s, %s)
-            """,
+            insert_query,
             (
-                data.get("container_id"),
-                data.get("temperature"),
-                data.get("humidity"),
-                data.get("vibration"),
-                data.get("timestamp")
+                container_id,
+                temperature,
+                humidity,
+                vibration,
+                event_timestamp
             )
         )
 
         conn.commit()
 
+        # Commit Kafka offset only after successful Snowflake insert
+        consumer.commit()
+
         print(
-            f"Saved to Snowflake: "
-            f"{data.get('container_id')} | "
-            f"Temp: {data.get('temperature')}°C | "
-            f"Humidity: {data.get('humidity')}% | "
-            f"Vibration: {data.get('vibration')}"
+            f"INSERTED | "
+            f"{container_id} | "
+            f"Temp: {temperature}°C | "
+            f"Humidity: {humidity}% | "
+            f"Vibration: {vibration}"
         )
 
+
 except KeyboardInterrupt:
-    print("\nConsumer stopped.")
+
+    print("\nStopping consumer...")
+
+
+except Exception as error:
+
+    print("\nERROR:")
+    print(error)
+
 
 finally:
+
     cursor.close()
     conn.close()
     consumer.close()
+
+    print("Connections closed.")
