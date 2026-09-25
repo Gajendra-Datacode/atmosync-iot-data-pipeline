@@ -1,0 +1,22 @@
+version: 2
+
+models:
+  - name: stg_telemetry
+    description: "Cleaned and typed telemetry view from Kafka raw ingestion"
+    columns:
+      - name: container_id
+        tests:
+          - not_null
+      - name: event_timestamp
+        tests:
+          - not_null
+
+  - name: fct_hourly_metrics
+    description: "Hourly aggregated metrics for IoT containers"
+    columns:
+      - name: container_id
+        tests:
+          - not_null
+      - name: telemetry_hour
+        tests:
+          - not_null

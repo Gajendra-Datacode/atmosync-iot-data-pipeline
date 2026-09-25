@@ -1,0 +1,8 @@
+version: 2
+
+sources:
+  - name: raw_iot
+    database: ATMOSYNC
+    schema: RAW
+    tables:
+      - name: IOT_TELEMETRY
