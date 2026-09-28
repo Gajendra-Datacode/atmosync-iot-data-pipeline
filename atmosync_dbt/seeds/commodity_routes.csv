@@ -1,0 +1,11 @@
+container_id,commodity_type,original_destination,dist_to_orig_km,orig_market_price_per_kg,reroute_destination,dist_to_reroute_km,reroute_market_price_per_kg,max_safe_temp_c,shelf_life_hours
+CONT_001,Berries,Rotterdam,850,4.50,Antwerp,320,3.90,4.0,48
+CONT_002,Bananas,Hamburg,1100,2.10,Bremen,450,1.80,14.0,72
+CONT_003,Pharmaceuticals,Frankfurt,600,120.00,Cologne,210,115.00,5.0,24
+CONT_004,Cut Flowers,Amsterdam,950,8.00,Utrecht,400,7.20,6.0,36
+CONT_005,Dairy,Munich,750,3.20,Nuremberg,250,2.95,4.0,30
+CONT_006,Berries,Rotterdam,920,4.50,Antwerp,390,3.90,4.0,48
+CONT_007,Fish,Copenhagen,1250,15.00,Malmo,580,13.50,2.0,20
+CONT_008,Bananas,Hamburg,1020,2.10,Bremen,380,1.80,14.0,72
+CONT_009,Pharmaceuticals,Frankfurt,700,120.00,Cologne,310,115.00,5.0,24
+CONT_010,Cut Flowers,Amsterdam,880,8.00,Utrecht,340,7.20,6.0,36
