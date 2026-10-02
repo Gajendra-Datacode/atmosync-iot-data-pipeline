@@ -1,36 +1,44 @@
-import os
+﻿import os
 import sys
 import json
 import requests
 import snowflake.connector
 
-SLACK_WEBHOOK_URL=""
+SNOWFLAKE_USER = os.getenv("SNOWFLAKE_USER", "GAJENDRA")
+SNOWFLAKE_PASSWORD = os.getenv("SNOWFLAKE_PASSWORD", "Chavada@123456")
+SNOWFLAKE_ACCOUNT = os.getenv("SNOWFLAKE_ACCOUNT", "TOAIPBQ-JM53109")
+SNOWFLAKE_WAREHOUSE = os.getenv("SNOWFLAKE_WAREHOUSE", "COMPUTE_WH")
+SNOWFLAKE_DATABASE = os.getenv("SNOWFLAKE_DATABASE", "ATMOSYNC")
+SNOWFLAKE_SCHEMA = os.getenv("SNOWFLAKE_SCHEMA", "DEV")
+
+SLACK_WEBHOOK_URL = os.getenv("SLACK_WEBHOOK_URL", "")
 
 def fetch_arbitrage_alerts():
     print("[*] Connecting to Snowflake DEV schema...")
     conn = snowflake.connector.connect(
-        user='GAJENDRA',
-        password='Chavada@123456',
-        account='TOAIPBQ-JM53109',
-        warehouse='COMPUTE_WH',
-        database='ATMOSYNC',
-        schema='DEV'
+        user=SNOWFLAKE_USER,
+        password=SNOWFLAKE_PASSWORD,
+        account=SNOWFLAKE_ACCOUNT,
+        warehouse=SNOWFLAKE_WAREHOUSE,
+        database=SNOWFLAKE_DATABASE,
+        schema=SNOWFLAKE_SCHEMA
     )
     cursor = conn.cursor()
 
     query = """
     SELECT 
         CONTAINER_ID,
-        COMMODITY,
-        CURRENT_PORT,
-        RECOMMENDED_PORT,
-        ARBITRAGE_STATUS,
-        SPOILAGE_RISK_HOURS,
-        POTENTIAL_VALUE_SAVED_USD
+        COMMODITY_TYPE,
+        ORIGINAL_DESTINATION,
+        REROUTE_DESTINATION,
+        ARBITRAGE_ACTION,
+        ESTIMATED_REMAINING_SHELF_LIFE_HRS,
+        ROUND((REROUTE_MARKET_PRICE_PER_KG - ORIG_MARKET_PRICE_PER_KG) * 1000, 2) AS POTENTIAL_VALUE_SAVED_USD
     FROM DEV.FCT_SPOILAGE_ARBITRAGE
-    WHERE ARBITRAGE_STATUS IN ('CRITICAL_SPOILAGE_IMMPENI', 'REROUTE_RECOMMENDED', 'CRITICAL_SPOILAGE_IMMINENT')
-    ORDER BY SPOILAGE_RISK_HOURS ASC;
+    WHERE ARBITRAGE_ACTION != 'MAINTAIN_ROUTE'
+    ORDER BY ESTIMATED_REMAINING_SHELF_LIFE_HRS ASC;
     """
+
     cursor.execute(query)
     rows = cursor.fetchall()
     cursor.close()
@@ -39,14 +47,15 @@ def fetch_arbitrage_alerts():
 
 def dispatch_alert(records):
     if not records:
-        print("[OK] None of the containers require immediate rerouting.")
+        print("[OK] No critical arbitrage alerts detected. All cargo is within safe parameters.")
         return
-    
-    print(f"[1] Found {len(records)} containers require spoilage arbitrage actions.\n")
+
+    print(f"[!] Found {len(records)} containers requiring spoilage arbitrage actions.\n")
     alert_lines = []
     for r in records:
         cid, comm, orig, dest, status, risk, saved = r
-        line = f- Container {cid} ({comm}) | Status: {status} | Divert: {orig} -> {dest} | Margin Saved: ${saved:,.2f}"
+        saved_val = saved if saved is not None else 0.0
+        line = f"- Container {cid} ({comm}) | Action: {status} | Route: {orig} -> {dest} | Margin Delta: ${saved_val:,.2f}"
         alert_lines.append(line)
 
     payload = {
@@ -57,13 +66,13 @@ def dispatch_alert(records):
 
     if SLACK_WEBHOOK_URL:
         resp = requests.post(SLACK_WEBHOOK_URL, json=payload)
-        print("[OK] Pushed to Slack Webhook!")
+        print(f"[OK] Webhook Response Status: {resp.status_code}")
     else:
-        print("--- [ALLERDTED SPOILAGE ARBITRAGE PAYLOAD] ---")
+        print("--- [ALERTED SPOILAGE ARBITRAGE PAYLOAD] ---")
         print(json.dumps(payload, indent=2))
-        print("-----------------------------------------------------")
+        print("------------------------------------------")
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     try:
         alerts = fetch_arbitrage_alerts()
         dispatch_alert(alerts)
